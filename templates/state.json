@@ -1,0 +1,15 @@
+{
+  "goal": "",
+  "next": "",
+  "done": [],
+  "files_touched": [],
+  "tests": {
+    "passed": [],
+    "failed": [],
+    "last_run": ""
+  },
+  "blockers": [],
+  "notes": [],
+  "iteration": 0,
+  "last_started_at": ""
+}

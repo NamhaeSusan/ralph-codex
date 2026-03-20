@@ -1,0 +1,296 @@
+#!/usr/bin/env python3
+
+import argparse
+import json
+import shutil
+import shlex
+import subprocess
+import sys
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+TEMPLATE_DIR = REPO_ROOT / "templates"
+WORKDIR_NAME = ".codex-ralph"
+
+
+def fail(message: str) -> int:
+    print(f"Error: {message}", file=sys.stderr)
+    return 1
+
+
+def repo_path(raw: str) -> Path:
+    return Path(raw).expanduser().resolve()
+
+
+def is_git_repo(path: Path) -> bool:
+    result = subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def require_git_repo(path: Path) -> None:
+    if not is_git_repo(path):
+        raise SystemExit(fail(f"{path} is not a git repository"))
+
+
+def workdir(path: Path) -> Path:
+    return path / WORKDIR_NAME
+
+
+def load_json(path: Path) -> dict:
+    return json.loads(path.read_text())
+
+
+def write_json(path: Path, data: dict) -> None:
+    path.write_text(json.dumps(data, indent=2) + "\n")
+
+
+def load_items(prd: dict) -> tuple[str, list[dict]]:
+    if isinstance(prd.get("userStories"), list):
+        items = []
+        for story in prd["userStories"]:
+            items.append(
+                {
+                    "id": story.get("id", ""),
+                    "title": story.get("title", ""),
+                    "priority": int(story.get("priority", 999999)),
+                    "done": bool(story.get("passes", False)),
+                }
+            )
+        return "userStories", items
+
+    if isinstance(prd.get("tasks"), list):
+        items = []
+        for task in prd["tasks"]:
+            items.append(
+                {
+                    "id": task.get("id", ""),
+                    "title": task.get("title", ""),
+                    "priority": int(task.get("priority", 999999)),
+                    "done": str(task.get("status", "pending")).lower() == "done",
+                }
+            )
+        return "tasks", items
+
+    raise SystemExit(fail("prd.json must contain either userStories or tasks"))
+
+
+def pending_items(prd: dict) -> list[dict]:
+    _, items = load_items(prd)
+    return sorted(
+        [item for item in items if not item["done"]],
+        key=lambda item: (item["priority"], item["id"], item["title"]),
+    )
+
+
+def template_path(name: str) -> Path:
+    return TEMPLATE_DIR / name
+
+
+def require_binary(name: str) -> None:
+    if shutil.which(name):
+        return
+    raise SystemExit(fail(f"required command not found: {name}"))
+
+
+def ensure_initialized(repo: Path) -> Path:
+    target = workdir(repo)
+    if not target.exists():
+        raise SystemExit(fail(f"{target} is missing. Run `ralph-codex init --dir {repo}` first"))
+    return target
+
+
+def sync_iteration_state(state_file: Path) -> None:
+    if not state_file.exists():
+        return
+    state = load_json(state_file)
+    state["iteration"] = int(state.get("iteration", 0)) + 1
+    state["last_started_at"] = datetime.now(timezone.utc).isoformat()
+    write_json(state_file, state)
+
+
+def codex_command(repo: Path, output_file: Path, dangerous: bool, model: str | None) -> list[str]:
+    cmd = [
+        "codex",
+        "exec",
+        "-",
+        "-C",
+        str(repo),
+        "--skip-git-repo-check",
+        "-o",
+        str(output_file),
+    ]
+    if dangerous:
+        cmd.append("--dangerously-bypass-approvals-and-sandbox")
+    else:
+        cmd.append("--full-auto")
+    if model:
+        cmd.extend(["-m", model])
+    return cmd
+
+
+def cmd_init(args: argparse.Namespace) -> int:
+    require_binary("git")
+    repo = repo_path(args.dir)
+    require_git_repo(repo)
+    target = workdir(repo)
+    target.mkdir(parents=True, exist_ok=True)
+
+    created = []
+    kept = []
+    for name in ("prompt.md", "prd.json", "state.json", "progress.txt"):
+        source = template_path(name)
+        destination = target / name
+        if destination.exists():
+            kept.append(destination)
+            continue
+        shutil.copy2(source, destination)
+        created.append(destination)
+
+    print(f"Initialized Ralph for Codex in {target}")
+    for path in created:
+        print(f"created {path}")
+    for path in kept:
+        print(f"kept    {path}")
+    return 0
+
+
+def cmd_status(args: argparse.Namespace) -> int:
+    require_binary("git")
+    repo = repo_path(args.dir)
+    require_git_repo(repo)
+    target = ensure_initialized(repo)
+    prd_file = target / "prd.json"
+    state_file = target / "state.json"
+
+    if not prd_file.exists():
+        return fail(f"{prd_file} is missing")
+
+    prd = load_json(prd_file)
+    pending = pending_items(prd)
+    _, items = load_items(prd)
+    done_count = len(items) - len(pending)
+
+    next_title = ""
+    if state_file.exists():
+        state = load_json(state_file)
+        next_title = str(state.get("next", "")).strip()
+
+    if not next_title and pending:
+        next_title = pending[0]["title"]
+
+    print(f"repo: {repo}")
+    print(f"branch: {prd.get('branchName', '')}")
+    print(f"items: {done_count}/{len(items)} complete")
+    if pending:
+        print(f"next: {next_title}")
+        print(f"pending: {pending[0]['id']} {pending[0]['title']}")
+        return 0
+
+    print("next: none")
+    print("status: COMPLETE")
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    require_binary("git")
+    require_binary("codex")
+    repo = repo_path(args.dir)
+    require_git_repo(repo)
+    target = ensure_initialized(repo)
+    prd_file = target / "prd.json"
+    prompt_file = target / "prompt.md"
+    state_file = target / "state.json"
+
+    if not prd_file.exists():
+        return fail(f"{prd_file} is missing")
+    if not prompt_file.exists():
+        return fail(f"{prompt_file} is missing")
+
+    initial_prd = load_json(prd_file)
+    if not pending_items(initial_prd):
+        print("COMPLETE")
+        return 0
+
+    for iteration in range(1, args.max + 1):
+        current_prd = load_json(prd_file)
+        pending = pending_items(current_prd)
+        if not pending:
+            print("COMPLETE")
+            return 0
+
+        print(f"Iteration {iteration}/{args.max}")
+        print(f"Working on: {pending[0]['id']} {pending[0]['title']}")
+
+        with tempfile.TemporaryDirectory(prefix="ralph-codex-") as temp_dir:
+            output_file = Path(temp_dir) / "last-message.txt"
+            cmd = codex_command(repo, output_file, args.dangerous, args.model)
+
+            if args.dry_run:
+                print("dry-run command:")
+                print(" ".join(shlex.quote(part) for part in cmd))
+                print(f"prompt: {prompt_file}")
+                return 0
+
+            sync_iteration_state(state_file)
+
+            with prompt_file.open() as prompt_stream:
+                result = subprocess.run(cmd, stdin=prompt_stream)
+
+            if result.returncode != 0:
+                return result.returncode
+
+            last_message = ""
+            if output_file.exists():
+                last_message = output_file.read_text().strip()
+
+            if last_message == "COMPLETE":
+                print("COMPLETE")
+                return 0
+
+            updated_prd = load_json(prd_file)
+            if not pending_items(updated_prd):
+                print("COMPLETE")
+                return 0
+
+    print(f"Stopped after {args.max} iterations with pending work remaining.")
+    return 1
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="ralph-codex")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subparsers.add_parser("init")
+    init_parser.add_argument("--dir", required=True)
+    init_parser.set_defaults(func=cmd_init)
+
+    status_parser = subparsers.add_parser("status")
+    status_parser.add_argument("--dir", required=True)
+    status_parser.set_defaults(func=cmd_status)
+
+    run_parser = subparsers.add_parser("run")
+    run_parser.add_argument("--dir", required=True)
+    run_parser.add_argument("--max", type=int, default=5)
+    run_parser.add_argument("--dry-run", action="store_true")
+    run_parser.add_argument("--dangerous", action="store_true")
+    run_parser.add_argument("--model")
+    run_parser.set_defaults(func=cmd_run)
+
+    return parser
+
+
+def main() -> int:
+    parser = build_parser()
+    args = parser.parse_args()
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

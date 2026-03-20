@@ -1,0 +1,8 @@
+# Durable learnings
+#
+# Append short, high-signal notes only.
+# Good:
+# - The settings page is rendered from ui/settings/page.tsx.
+# - This repo expects `make test` before commit.
+# Bad:
+# - Long narrative logs for every iteration.

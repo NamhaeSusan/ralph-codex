@@ -1,0 +1,19 @@
+{
+  "project": "Example Project",
+  "branchName": "ralph/example-task",
+  "description": "Replace this placeholder with the overall feature description.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Replace this placeholder with a real task",
+      "description": "As a developer, I want one concrete story here so the loop can complete it in a single iteration.",
+      "priority": 1,
+      "passes": false,
+      "acceptanceCriteria": [
+        "Replace this story with a concrete, testable item.",
+        "Typecheck passes"
+      ],
+      "notes": ""
+    }
+  ]
+}
