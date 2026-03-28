@@ -44,7 +44,10 @@ def workdir(path: Path) -> Path:
 
 
 def load_json(path: Path) -> dict:
-    return json.loads(path.read_text())
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise SystemExit(fail(f"invalid JSON in {path}: {e}"))
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -217,6 +220,33 @@ def cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_reset(args: argparse.Namespace) -> int:
+    require_binary("git")
+    repo = repo_path(args.dir)
+    require_git_repo(repo)
+    target = ensure_initialized(repo)
+    state_file = target / "state.json"
+
+    shutil.copy2(template_path("state.json"), state_file)
+    print(f"Reset state in {state_file}")
+
+    if args.items:
+        prd_file = target / "prd.json"
+        if not prd_file.exists():
+            return fail(f"{prd_file} is missing")
+        prd = load_json(prd_file)
+        key, _ = load_items(prd)
+        for item in prd[key]:
+            if key == "userStories":
+                item["passes"] = False
+            else:
+                item["status"] = "pending"
+        write_json(prd_file, prd)
+        print(f"Reset all items to pending in {prd_file}")
+
+    return 0
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     require_binary("git")
     require_binary("codex")
@@ -316,6 +346,11 @@ def build_parser() -> argparse.ArgumentParser:
     status_parser = subparsers.add_parser("status", help="show progress of the current PRD")
     status_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
     status_parser.set_defaults(func=cmd_status)
+
+    reset_parser = subparsers.add_parser("reset", help="reset state to restart the loop")
+    reset_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
+    reset_parser.add_argument("--items", action="store_true", help="also reset all items to pending")
+    reset_parser.set_defaults(func=cmd_reset)
 
     run_parser = subparsers.add_parser("run", help="execute the Ralph loop with codex")
     run_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")

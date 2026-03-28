@@ -71,6 +71,9 @@ ralph-codex run --max 1 --dry-run
 ralph-codex run --max 5 --dangerous
 ralph-codex run --max 5 --model o3
 
+ralph-codex reset              # reset state.json to restart
+ralph-codex reset --items      # also mark all items as pending
+
 # or specify --dir explicitly
 ralph-codex init --dir /path/to/repo
 ralph-codex run --dir /path/to/repo --max 5

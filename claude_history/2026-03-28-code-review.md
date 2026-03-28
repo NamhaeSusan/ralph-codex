@@ -17,6 +17,8 @@
 - ensure_initialized: cleaner error message
 - cmd_run: consolidated duplicate COMPLETE check blocks (3 → 1)
 - cmd_run: accurate completed count even on codex failure
+- load_json: clear error message on malformed JSON instead of traceback
+- New `reset` subcommand: reset state.json, optionally reset all items to pending
 
 ### install.sh
 - Added PATH check: warns user if `~/.local/bin` is not in PATH
