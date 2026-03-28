@@ -282,26 +282,19 @@ def cmd_run(args: argparse.Namespace) -> int:
             iter_sec = int(iter_elapsed.total_seconds())
             print(f"Iteration {iteration} finished in {iter_sec // 60}m {iter_sec % 60}s")
 
-            if result.returncode != 0:
-                completed_in_run = len(done) - initial_done_count
-                print_summary(f"FAILED (exit {result.returncode})")
-                return result.returncode
-
             last_message = ""
             if output_file.exists():
                 last_message = output_file.read_text().strip()
 
-            if last_message == "COMPLETE":
-                final_prd = load_json(prd_file)
-                final_done, _ = split_items(final_prd)
-                completed_in_run = len(final_done) - initial_done_count
-                print_summary("COMPLETE")
-                return 0
-
             updated_prd = load_json(prd_file)
             updated_done, remaining = split_items(updated_prd)
-            if not remaining:
-                completed_in_run = len(updated_done) - initial_done_count
+            completed_in_run = len(updated_done) - initial_done_count
+
+            if result.returncode != 0:
+                print_summary(f"FAILED (exit {result.returncode})")
+                return result.returncode
+
+            if last_message == "COMPLETE" or not remaining:
                 print_summary("COMPLETE")
                 return 0
 

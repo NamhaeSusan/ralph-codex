@@ -15,6 +15,8 @@
 - cmd_run: per-iteration elapsed time display
 - cmd_status: list all pending items when more than one
 - ensure_initialized: cleaner error message
+- cmd_run: consolidated duplicate COMPLETE check blocks (3 → 1)
+- cmd_run: accurate completed count even on codex failure
 
 ### install.sh
 - Added PATH check: warns user if `~/.local/bin` is not in PATH
