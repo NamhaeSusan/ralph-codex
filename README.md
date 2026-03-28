@@ -39,7 +39,8 @@ ralph-codex status
 ralph-codex run --max 5
 ```
 
-All commands default `--dir` to the current directory.
+All commands default `--dir` to the current directory and auto-resolve to the
+git root, so running from a subdirectory works correctly.
 
 ## Workflow
 
