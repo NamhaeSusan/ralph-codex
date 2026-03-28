@@ -65,6 +65,7 @@ ralph-codex status --dir /path/to/repo
 ralph-codex run --dir /path/to/repo --max 5
 ralph-codex run --dir /path/to/repo --max 1 --dry-run
 ralph-codex run --dir /path/to/repo --max 5 --dangerous
+ralph-codex run --dir /path/to/repo --max 5 --model o3
 ```
 
 ## Repository Layout
