@@ -23,6 +23,12 @@
 - Removed separate is_git_repo/repo_path/require_git_repo — unified into resolve_repo
 - One fewer subprocess call per command (was: git check + git toplevel, now: git toplevel only)
 
+### templates/prompt.md
+- Restructured into clear sections: Read first / Pick work / Execute / Before finishing
+- Added explicit acceptance criteria verification step
+- Specified what each state.json field should contain for better handoff
+- Added instruction to not start a second item in the same run
+
 ### install.sh
 - Added PATH check: warns user if `~/.local/bin` is not in PATH
 
