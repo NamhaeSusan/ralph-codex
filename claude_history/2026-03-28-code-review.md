@@ -19,6 +19,9 @@
 - cmd_run: accurate completed count even on codex failure
 - load_json: clear error message on malformed JSON instead of traceback
 - New `reset` subcommand: reset state.json, optionally reset all items to pending
+- resolve_repo: auto-resolve to git toplevel from any subdirectory
+- Removed separate is_git_repo/repo_path/require_git_repo — unified into resolve_repo
+- One fewer subprocess call per command (was: git check + git toplevel, now: git toplevel only)
 
 ### install.sh
 - Added PATH check: warns user if `~/.local/bin` is not in PATH

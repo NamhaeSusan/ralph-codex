@@ -21,22 +21,16 @@ def fail(message: str) -> int:
     return 1
 
 
-def repo_path(raw: str) -> Path:
-    return Path(raw).expanduser().resolve()
-
-
-def is_git_repo(path: Path) -> bool:
+def resolve_repo(raw: str) -> Path:
+    path = Path(raw).expanduser().resolve()
     result = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--is-inside-work-tree"],
+        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
         capture_output=True,
         text=True,
     )
-    return result.returncode == 0 and result.stdout.strip() == "true"
-
-
-def require_git_repo(path: Path) -> None:
-    if not is_git_repo(path):
-        raise SystemExit(fail(f"{path} is not a git repository"))
+    if result.returncode != 0:
+        raise SystemExit(fail(f"{path} is not inside a git repository"))
+    return Path(result.stdout.strip())
 
 
 def workdir(path: Path) -> Path:
@@ -141,9 +135,7 @@ def codex_command(repo: Path, output_file: Path, dangerous: bool, model: str | N
 
 
 def cmd_init(args: argparse.Namespace) -> int:
-    require_binary("git")
-    repo = repo_path(args.dir)
-    require_git_repo(repo)
+    repo = resolve_repo(args.dir)
     target = workdir(repo)
     target.mkdir(parents=True, exist_ok=True)
 
@@ -176,9 +168,7 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    require_binary("git")
-    repo = repo_path(args.dir)
-    require_git_repo(repo)
+    repo = resolve_repo(args.dir)
     target = ensure_initialized(repo)
     prd_file = target / "prd.json"
     state_file = target / "state.json"
@@ -221,9 +211,7 @@ def cmd_status(args: argparse.Namespace) -> int:
 
 
 def cmd_reset(args: argparse.Namespace) -> int:
-    require_binary("git")
-    repo = repo_path(args.dir)
-    require_git_repo(repo)
+    repo = resolve_repo(args.dir)
     target = ensure_initialized(repo)
     state_file = target / "state.json"
 
@@ -248,10 +236,8 @@ def cmd_reset(args: argparse.Namespace) -> int:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    require_binary("git")
     require_binary("codex")
-    repo = repo_path(args.dir)
-    require_git_repo(repo)
+    repo = resolve_repo(args.dir)
     target = ensure_initialized(repo)
     prd_file = target / "prd.json"
     prompt_file = target / "prompt.md"
