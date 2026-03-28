@@ -11,6 +11,10 @@
 - Added progress display in `cmd_run`: `[2/6 done]`
 - Added iteration count and last run time to `cmd_status`
 - Added `.gitignore` hint in `cmd_init` when `.codex-ralph/` not ignored
+- cmd_run: end-of-run summary with items completed and elapsed time
+- cmd_run: per-iteration elapsed time display
+- cmd_status: list all pending items when more than one
+- ensure_initialized: cleaner error message
 
 ### install.sh
 - Added PATH check: warns user if `~/.local/bin` is not in PATH
