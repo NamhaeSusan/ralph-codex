@@ -17,3 +17,5 @@ remove_if_matches() {
 remove_if_matches "${HOME}/.local/bin/ralph-codex" "${ROOT_DIR}/bin/ralph-codex"
 remove_if_matches "${HOME}/.agents/skills/prd" "${ROOT_DIR}/skills/prd"
 remove_if_matches "${HOME}/.agents/skills/ralph" "${ROOT_DIR}/skills/ralph"
+
+echo "Uninstalled ralph-codex."

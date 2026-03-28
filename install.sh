@@ -15,3 +15,10 @@ ln -sfn "${ROOT_DIR}/skills/ralph" "${SKILLS_DIR}/ralph"
 
 echo "Installed ralph-codex from ${ROOT_DIR}"
 echo "Restart Codex to discover the prd and ralph skills."
+
+if [[ ":${PATH}:" != *":${BIN_DIR}:"* ]]; then
+  echo ""
+  echo "WARNING: ${BIN_DIR} is not in your PATH."
+  echo "Add this to your shell profile:"
+  echo "  export PATH=\"${BIN_DIR}:\${PATH}\""
+fi
