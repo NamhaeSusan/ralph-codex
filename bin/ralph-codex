@@ -157,9 +157,18 @@ def cmd_init(args: argparse.Namespace) -> int:
 
     print(f"Initialized Ralph for Codex in {target}")
     for path in created:
-        print(f"created {path}")
+        print(f"  created {path}")
     for path in kept:
-        print(f"kept    {path}")
+        print(f"  kept    {path}")
+
+    gitignore = repo / ".gitignore"
+    if gitignore.exists():
+        content = gitignore.read_text()
+        if WORKDIR_NAME not in content:
+            print(f"\nHint: add {WORKDIR_NAME}/ to .gitignore to keep state out of version control.")
+    else:
+        print(f"\nHint: consider creating .gitignore with {WORKDIR_NAME}/ entry.")
+
     return 0
 
 
@@ -179,23 +188,28 @@ def cmd_status(args: argparse.Namespace) -> int:
     total = len(done) + len(pending)
 
     next_title = ""
+    iteration = 0
+    last_started = ""
     if state_file.exists():
         state = load_json(state_file)
         next_title = str(state.get("next", "")).strip()
+        iteration = int(state.get("iteration", 0))
+        last_started = str(state.get("last_started_at", "")).strip()
 
     if not next_title and pending:
         next_title = pending[0]["title"]
 
-    print(f"repo: {repo}")
-    print(f"branch: {prd.get('branchName', '')}")
-    print(f"items: {len(done)}/{total} complete")
+    print(f"repo:      {repo}")
+    print(f"branch:    {prd.get('branchName', '')}")
+    print(f"items:     {len(done)}/{total} complete")
+    print(f"iteration: {iteration}")
+    if last_started:
+        print(f"last run:  {last_started}")
     if pending:
-        print(f"next: {next_title}")
-        print(f"pending: {pending[0]['id']} {pending[0]['title']}")
+        print(f"next:      {next_title}")
         return 0
 
-    print("next: none")
-    print("status: COMPLETE")
+    print("status:    COMPLETE")
     return 0
 
 
@@ -222,12 +236,13 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     for iteration in range(1, args.max + 1):
         current_prd = load_json(prd_file)
-        _, pending = split_items(current_prd)
+        done, pending = split_items(current_prd)
         if not pending:
             print("COMPLETE")
             return 0
 
-        print(f"Iteration {iteration}/{args.max}")
+        total = len(done) + len(pending)
+        print(f"\nIteration {iteration}/{args.max}  [{len(done)}/{total} done]")
         print(f"Working on: {pending[0]['id']} {pending[0]['title']}")
 
         with tempfile.TemporaryDirectory(prefix="ralph-codex-") as temp_dir:
@@ -271,15 +286,15 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     init_parser = subparsers.add_parser("init", help="initialize .codex-ralph/ in a repository")
-    init_parser.add_argument("--dir", required=True, help="path to the git repository")
+    init_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
     init_parser.set_defaults(func=cmd_init)
 
     status_parser = subparsers.add_parser("status", help="show progress of the current PRD")
-    status_parser.add_argument("--dir", required=True, help="path to the git repository")
+    status_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
     status_parser.set_defaults(func=cmd_status)
 
     run_parser = subparsers.add_parser("run", help="execute the Ralph loop with codex")
-    run_parser.add_argument("--dir", required=True, help="path to the git repository")
+    run_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
     run_parser.add_argument("--max", type=int, default=5, help="maximum iterations (default: 5)")
     run_parser.add_argument("--dry-run", action="store_true", help="print the codex command without executing")
     run_parser.add_argument("--dangerous", action="store_true", help="bypass approvals and sandbox")

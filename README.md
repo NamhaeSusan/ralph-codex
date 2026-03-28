@@ -33,18 +33,21 @@ Restart Codex after installation so native skill discovery picks up `prd` and `r
 Then, inside any Git repository:
 
 ```bash
-ralph-codex init --dir /path/to/repo
-ralph-codex status --dir /path/to/repo
-ralph-codex run --dir /path/to/repo --max 5
+cd /path/to/repo
+ralph-codex init
+ralph-codex status
+ralph-codex run --max 5
 ```
+
+All commands default `--dir` to the current directory.
 
 ## Workflow
 
-1. Run `ralph-codex init --dir /path/to/repo`.
+1. `cd /path/to/repo && ralph-codex init`
 2. In Codex, ask for a PRD using the `prd` skill.
 3. In Codex, ask the `ralph` skill to convert that PRD into `.codex-ralph/prd.json`.
-4. Run `ralph-codex status --dir /path/to/repo`.
-5. Run `ralph-codex run --dir /path/to/repo --max 5`.
+4. `ralph-codex status`
+5. `ralph-codex run --max 5`
 
 ## Install Locations
 
@@ -60,12 +63,17 @@ to its own repository root.
 ## Commands
 
 ```bash
+# run from inside the target repo (--dir defaults to .)
+ralph-codex init
+ralph-codex status
+ralph-codex run --max 5
+ralph-codex run --max 1 --dry-run
+ralph-codex run --max 5 --dangerous
+ralph-codex run --max 5 --model o3
+
+# or specify --dir explicitly
 ralph-codex init --dir /path/to/repo
-ralph-codex status --dir /path/to/repo
 ralph-codex run --dir /path/to/repo --max 5
-ralph-codex run --dir /path/to/repo --max 1 --dry-run
-ralph-codex run --dir /path/to/repo --max 5 --dangerous
-ralph-codex run --dir /path/to/repo --max 5 --model o3
 ```
 
 ## Repository Layout

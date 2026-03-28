@@ -1,4 +1,4 @@
-# Code Review and Improvements
+# Code Review and Usability Improvements
 
 ## Changes
 
@@ -7,6 +7,10 @@
 - Eliminated redundant double call to `load_items()` in `cmd_status`
 - Updated `cmd_run` to use `split_items()` consistently
 - Added help text to all argparse arguments and subcommands
+- Changed `--dir` from required to optional (defaults to current directory)
+- Added progress display in `cmd_run`: `[2/6 done]`
+- Added iteration count and last run time to `cmd_status`
+- Added `.gitignore` hint in `cmd_init` when `.codex-ralph/` not ignored
 
 ### install.sh
 - Added PATH check: warns user if `~/.local/bin` is not in PATH
@@ -16,3 +20,5 @@
 
 ### README.md
 - Added `--model` flag example to Commands section
+- Updated all examples to use simpler `--dir`-less syntax
+- Documented that `--dir` defaults to current directory
