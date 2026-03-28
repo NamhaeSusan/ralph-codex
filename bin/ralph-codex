@@ -114,7 +114,9 @@ def sync_iteration_state(state_file: Path) -> None:
     write_json(state_file, state)
 
 
-def codex_command(repo: Path, output_file: Path, dangerous: bool, model: str | None) -> list[str]:
+def codex_command(
+    repo: Path, output_file: Path, dangerous: bool, model: str | None
+) -> list[str]:
     cmd = [
         "codex",
         "exec",
@@ -160,7 +162,9 @@ def cmd_init(args: argparse.Namespace) -> int:
     if gitignore.exists():
         content = gitignore.read_text()
         if WORKDIR_NAME not in content:
-            print(f"\nHint: add {WORKDIR_NAME}/ to .gitignore to keep state out of version control.")
+            print(
+                f"\nHint: add {WORKDIR_NAME}/ to .gitignore to keep state out of version control."
+            )
     else:
         print(f"\nHint: consider creating .gitignore with {WORKDIR_NAME}/ entry.")
 
@@ -296,7 +300,9 @@ def cmd_run(args: argparse.Namespace) -> int:
 
             iter_elapsed = datetime.now(timezone.utc) - iter_start
             iter_sec = int(iter_elapsed.total_seconds())
-            print(f"Iteration {iteration} finished in {iter_sec // 60}m {iter_sec % 60}s")
+            print(
+                f"Iteration {iteration} finished in {iter_sec // 60}m {iter_sec % 60}s"
+            )
 
             last_message = ""
             if output_file.exists():
@@ -322,27 +328,53 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="ralph-codex", description="Fresh-context Ralph workflow for Codex")
+    parser = argparse.ArgumentParser(
+        prog="ralph-codex", description="Fresh-context Ralph workflow for Codex"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    init_parser = subparsers.add_parser("init", help="initialize .codex-ralph/ in a repository")
-    init_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
+    init_parser = subparsers.add_parser(
+        "init", help="initialize .codex-ralph/ in a repository"
+    )
+    init_parser.add_argument(
+        "--dir", default=".", help="path to the git repository (default: .)"
+    )
     init_parser.set_defaults(func=cmd_init)
 
-    status_parser = subparsers.add_parser("status", help="show progress of the current PRD")
-    status_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
+    status_parser = subparsers.add_parser(
+        "status", help="show progress of the current PRD"
+    )
+    status_parser.add_argument(
+        "--dir", default=".", help="path to the git repository (default: .)"
+    )
     status_parser.set_defaults(func=cmd_status)
 
-    reset_parser = subparsers.add_parser("reset", help="reset state to restart the loop")
-    reset_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
-    reset_parser.add_argument("--items", action="store_true", help="also reset all items to pending")
+    reset_parser = subparsers.add_parser(
+        "reset", help="reset state to restart the loop"
+    )
+    reset_parser.add_argument(
+        "--dir", default=".", help="path to the git repository (default: .)"
+    )
+    reset_parser.add_argument(
+        "--items", action="store_true", help="also reset all items to pending"
+    )
     reset_parser.set_defaults(func=cmd_reset)
 
     run_parser = subparsers.add_parser("run", help="execute the Ralph loop with codex")
-    run_parser.add_argument("--dir", default=".", help="path to the git repository (default: .)")
-    run_parser.add_argument("--max", type=int, default=5, help="maximum iterations (default: 5)")
-    run_parser.add_argument("--dry-run", action="store_true", help="print the codex command without executing")
-    run_parser.add_argument("--dangerous", action="store_true", help="bypass approvals and sandbox")
+    run_parser.add_argument(
+        "--dir", default=".", help="path to the git repository (default: .)"
+    )
+    run_parser.add_argument(
+        "--max", type=int, default=5, help="maximum iterations (default: 5)"
+    )
+    run_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print the codex command without executing",
+    )
+    run_parser.add_argument(
+        "--dangerous", action="store_true", help="bypass approvals and sandbox"
+    )
     run_parser.add_argument("--model", help="codex model override")
     run_parser.set_defaults(func=cmd_run)
 
