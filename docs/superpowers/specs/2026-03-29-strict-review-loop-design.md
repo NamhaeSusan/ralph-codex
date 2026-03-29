@@ -6,9 +6,10 @@ Add a review-first loop to `ralph-codex` for existing repositories that must go
 through repeated full-repository code review, finding-driven fixes, and
 mandatory verification.
 
-The first target use case is `trelab-drb-server`, but the loop should keep a
-generic core runner and rely on repository-local verification profiles for
-other Git repositories.
+The first target use case is `trelab-drb-server`.
+
+The v1 implementation should optimize for that repository first, while keeping
+the command structure and artifact layout reusable later.
 
 ## Non-Goals
 
@@ -20,8 +21,7 @@ other Git repositories.
 
 ## Fixed Product Decisions
 
-These decisions were confirmed for the first target profile
-(`trelab-drb-server`) and are part of v1:
+These decisions were confirmed for `trelab-drb-server` and are part of v1:
 
 - Review scope: the entire repository on every iteration
 - Findings scope:
@@ -151,6 +151,21 @@ The PRD artifacts remain untouched:
 This separation avoids collisions between task-completion state and review-loop
 state.
 
+## Run Semantics
+
+Each `review-loop` invocation is a fresh run.
+
+v1 should not support resuming a partially completed previous run. If the user
+starts `review-loop` again, it should:
+
+- create a new run sequence starting from iteration 1
+- treat the current repository state as the new baseline
+- leave older `review-runs/` artifacts untouched unless `review-reset
+  --artifacts` was used
+
+For predictable Hurl gating and artifact auditing, v1 should require a clean
+working tree before starting `review-loop`.
+
 ## Initialization And Bootstrap
 
 The review-loop assets should be created by extending the existing `init`
@@ -186,6 +201,7 @@ Suggested shape:
   "iteration": 3,
   "status": "verify",
   "last_stop_reason": "",
+  "run_started_from_head": "abc1234",
   "last_started_at": "2026-03-29T10:00:00Z",
   "last_completed_at": "2026-03-29T10:12:00Z",
   "last_run_dir": ".codex-ralph/review-runs/0003",
@@ -213,6 +229,7 @@ Field intent:
 - `status`: `review`, `fix`, `verify`, `complete`, `failed`, or `stopped`
 - `last_stop_reason`: empty during active execution; otherwise values such as
   `max_reached`, `verification_failed`, `fix_blocked`, or `review_invalid`
+- `run_started_from_head`: `HEAD` commit hash at the start of the current run
 - `last_run_dir`: artifact directory for the most recent iteration
 - `last_review`: compact summary for `review-status`
 - `last_verify`: last verification result summary
@@ -293,6 +310,9 @@ Runner rules:
   `resolved_findings`
 - `status=blocked` fails the iteration immediately
 - missing or malformed fixer output fails the iteration immediately
+- the retry fixer after verification failure must obey the same contract
+- retry fixer artifacts should be written as separate files, such as
+  `fix-retry.json` and `fix-retry.txt`
 
 ## Reviewer Prompt Contract
 
@@ -338,13 +358,14 @@ The target repository requires `make hurl` only for larger API-affecting
 changes, and the command requires a running server plus seed data.
 
 For this design, "change set" means the cumulative working tree delta produced
-by the current `review-loop` run, measured from the repository state at the
-start of iteration 1.
+by the current `review-loop` run, measured from the clean repository state at
+the start of iteration 1.
 
 The runner should therefore:
 
-- capture a loop-start snapshot before iteration 1
-- recompute changed files against that snapshot before each verify phase
+- record the starting `HEAD` commit hash and initial clean-tree marker in
+  `review-loop.json`
+- recompute changed files from the current working tree before each verify phase
 - treat `needs_hurl` as sticky for the rest of the run once any trigger path
   appears in that cumulative delta
 
@@ -363,12 +384,12 @@ should prioritize safety.
 
 ## Server Management For Hurl
 
-The core loop should stay generic, but Hurl orchestration is repository
-specific. v1 should therefore use a repo-local review config file.
+Hurl orchestration is repository specific. For v1, the runner should keep the
+base verification gate fixed in code and use `review-config.json` only for Hurl
+and server-management behavior.
 
 `review-config.json` should define:
 
-- base verification commands
 - Hurl command
 - Hurl trigger paths
 - optional server start command
@@ -376,20 +397,13 @@ specific. v1 should therefore use a repo-local review config file.
 - optional seed command
 - optional db reset command
 - paths that imply schema-sensitive resets
-- optional boolean for `restart_after_backend_change_when_hurl_skipped`
 
 Generic default behavior:
 
-- always run the base verification commands from config
 - if no Hurl config is present, skip Hurl orchestration entirely
 
 For `trelab-drb-server`, the review config would encode:
 
-- base verify:
-  - `make fmt`
-  - `make fix`
-  - `make lint`
-  - `make test`
 - Hurl trigger paths:
   - `cmd/`
   - `internal/`
@@ -405,8 +419,6 @@ For `trelab-drb-server`, the review config would encode:
   - `make seed`
 - db reset:
   - `make dbreset`
-- restart_after_backend_change_when_hurl_skipped:
-  - `true`
 
 When `needs_hurl=true`, the runner should manage the configured development
 server itself instead of relying on the user to do it manually.
@@ -424,10 +436,6 @@ Rules:
   - wait for the configured healthcheck URL or healthcheck command
   - run the configured Hurl command
 
-If Go backend files changed but Hurl was skipped, the runner should still
-restart the server once at the end only when the repo-local config explicitly
-enables `restart_after_backend_change_when_hurl_skipped`.
-
 The runner must capture server logs into the iteration artifact directory.
 The runner must terminate any managed server process on normal completion,
 failure, interrupt, and `review-reset`.
@@ -435,6 +443,15 @@ failure, interrupt, and `review-reset`.
 On loop startup, if `managed_server_pid` exists, the runner should verify that
 the process still matches the configured server command. If it does, terminate
 it before starting a new one. If it does not, clear the stale PID and continue.
+
+Hurl orchestration failures should fail the iteration immediately with explicit
+stop reasons:
+
+- `db_reset_failed`
+- `server_start_failed`
+- `healthcheck_failed`
+- `seed_failed`
+- `hurl_failed`
 
 ## Iteration State Machine
 
@@ -458,6 +475,7 @@ Each iteration follows this sequence:
    - run the fixer one more time with:
      - original findings
      - verification failure output
+   - require the same fixer JSON contract as the first fix pass
    - rerun verification once
 13. if verification still fails, mark the loop failed and stop
 14. if verification passes, continue to the next iteration unless `--max` was
@@ -479,7 +497,11 @@ Immediate failure conditions:
 - fixer reports `blocked`
 - verification fails twice in the same iteration
 - verification fails after a zero-finding review
-- server startup for Hurl never reaches healthy state
+- `db reset` fails
+- server start fails
+- healthcheck never passes
+- seed command fails
+- Hurl command fails
 
 Non-failure conditions:
 
