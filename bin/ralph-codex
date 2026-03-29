@@ -23,11 +23,16 @@ def fail(message: str) -> int:
 
 def resolve_repo(raw: str) -> Path:
     path = Path(raw).expanduser().resolve()
-    result = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
-        capture_output=True,
-        text=True,
-    )
+    if not path.is_dir():
+        raise SystemExit(fail(f"directory not found: {path}"))
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        raise SystemExit(fail("git is not installed"))
     if result.returncode != 0:
         raise SystemExit(fail(f"{path} is not inside a git repository"))
     return Path(result.stdout.strip())

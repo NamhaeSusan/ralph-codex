@@ -22,6 +22,7 @@
 - resolve_repo: auto-resolve to git toplevel from any subdirectory
 - Removed separate is_git_repo/repo_path/require_git_repo — unified into resolve_repo
 - One fewer subprocess call per command (was: git check + git toplevel, now: git toplevel only)
+- resolve_repo: handle missing git binary (FileNotFoundError) and non-existent directory
 
 ### templates/prompt.md
 - Restructured into clear sections: Read first / Pick work / Execute / Before finishing
