@@ -6,9 +6,9 @@ Add a review-first loop to `ralph-codex` for existing repositories that must go
 through repeated full-repository code review, finding-driven fixes, and
 mandatory verification.
 
-The first target use case is `trelab-drb-server`, but the loop should be
-generic enough to run against other Git repositories with local project
-instructions and Make-based verification.
+The first target use case is `trelab-drb-server`, but the loop should keep a
+generic core runner and rely on repository-local verification profiles for
+other Git repositories.
 
 ## Non-Goals
 
@@ -20,7 +20,8 @@ instructions and Make-based verification.
 
 ## Fixed Product Decisions
 
-These decisions were confirmed during brainstorming and are part of v1:
+These decisions were confirmed for the first target profile
+(`trelab-drb-server`) and are part of v1:
 
 - Review scope: the entire repository on every iteration
 - Findings scope:
@@ -64,7 +65,7 @@ v1 adds three commands:
 
 - `ralph-codex review-loop --dir <repo> --max <n>`
 - `ralph-codex review-status --dir <repo>`
-- `ralph-codex review-reset --dir <repo>`
+- `ralph-codex review-reset --dir <repo> [--artifacts]`
 
 The existing commands remain unchanged:
 
@@ -135,6 +136,7 @@ The loop reuses `.codex-ralph/` but keeps its files separate from the PRD loop.
 New files and directories:
 
 - `.codex-ralph/review-loop.json`
+- `.codex-ralph/review-config.json`
 - `.codex-ralph/review-prompts/full-repo-review.md`
 - `.codex-ralph/review-prompts/fix-findings.md`
 - `.codex-ralph/review-schemas/findings.json`
@@ -149,6 +151,29 @@ The PRD artifacts remain untouched:
 This separation avoids collisions between task-completion state and review-loop
 state.
 
+## Initialization And Bootstrap
+
+The review-loop assets should be created by extending the existing `init`
+command.
+
+`ralph-codex init` should ensure these review files exist without overwriting
+user-edited versions:
+
+- `.codex-ralph/review-loop.json`
+- `.codex-ralph/review-config.json`
+- `.codex-ralph/review-prompts/full-repo-review.md`
+- `.codex-ralph/review-prompts/fix-findings.md`
+- `.codex-ralph/review-schemas/findings.json`
+
+Behavior rules:
+
+- `init` creates missing review-loop files alongside the existing PRD files
+- `review-loop`, `review-status`, and `review-reset` require initialization
+- if `.codex-ralph/` is missing, these commands fail with the same style of
+  guidance already used by the current runner
+- `review-reset` never regenerates prompt or schema templates; it only resets
+  state and optional artifacts
+
 ## Review State File
 
 `review-loop.json` should be intentionally small. Detailed artifacts belong in
@@ -160,6 +185,7 @@ Suggested shape:
 {
   "iteration": 3,
   "status": "verify",
+  "last_stop_reason": "",
   "last_started_at": "2026-03-29T10:00:00Z",
   "last_completed_at": "2026-03-29T10:12:00Z",
   "last_run_dir": ".codex-ralph/review-runs/0003",
@@ -184,7 +210,9 @@ Suggested shape:
 Field intent:
 
 - `iteration`: current loop number
-- `status`: `review`, `fix`, `verify`, `complete`, or `failed`
+- `status`: `review`, `fix`, `verify`, `complete`, `failed`, or `stopped`
+- `last_stop_reason`: empty during active execution; otherwise values such as
+  `max_reached`, `verification_failed`, `fix_blocked`, or `review_invalid`
 - `last_run_dir`: artifact directory for the most recent iteration
 - `last_review`: compact summary for `review-status`
 - `last_verify`: last verification result summary
@@ -232,6 +260,40 @@ Schema rules:
 - unsupported categories are invalid
 - malformed JSON fails the iteration immediately
 
+## Fix Result Contract
+
+The fixer should also return machine-readable output so the runner can
+distinguish success from explicit blockers.
+
+Suggested shape:
+
+```json
+{
+  "status": "fixed",
+  "resolved_findings": ["F-001", "F-002"],
+  "blockers": []
+}
+```
+
+If the fixer cannot safely resolve all findings, it must return:
+
+```json
+{
+  "status": "blocked",
+  "resolved_findings": [],
+  "blockers": [
+    "F-003 requires a product decision before code changes."
+  ]
+}
+```
+
+Runner rules:
+
+- `status=fixed` requires every review finding id to appear in
+  `resolved_findings`
+- `status=blocked` fails the iteration immediately
+- missing or malformed fixer output fails the iteration immediately
+
 ## Reviewer Prompt Contract
 
 The reviewer prompt must explicitly enforce the user-selected boundaries.
@@ -275,7 +337,18 @@ Required fixer rules:
 The target repository requires `make hurl` only for larger API-affecting
 changes, and the command requires a running server plus seed data.
 
-v1 should use a conservative trigger:
+For this design, "change set" means the cumulative working tree delta produced
+by the current `review-loop` run, measured from the repository state at the
+start of iteration 1.
+
+The runner should therefore:
+
+- capture a loop-start snapshot before iteration 1
+- recompute changed files against that snapshot before each verify phase
+- treat `needs_hurl` as sticky for the rest of the run once any trigger path
+  appears in that cumulative delta
+
+v1 should use a conservative trigger on that cumulative file set:
 
 - set `needs_hurl=true` if any modified file is under:
   - `cmd/`
@@ -290,27 +363,78 @@ should prioritize safety.
 
 ## Server Management For Hurl
 
-When `needs_hurl=true`, the runner should manage the development server itself
-instead of relying on the user to do it manually.
+The core loop should stay generic, but Hurl orchestration is repository
+specific. v1 should therefore use a repo-local review config file.
+
+`review-config.json` should define:
+
+- base verification commands
+- Hurl command
+- Hurl trigger paths
+- optional server start command
+- optional healthcheck URL or healthcheck command
+- optional seed command
+- optional db reset command
+- paths that imply schema-sensitive resets
+- optional boolean for `restart_after_backend_change_when_hurl_skipped`
+
+Generic default behavior:
+
+- always run the base verification commands from config
+- if no Hurl config is present, skip Hurl orchestration entirely
+
+For `trelab-drb-server`, the review config would encode:
+
+- base verify:
+  - `make fmt`
+  - `make fix`
+  - `make lint`
+  - `make test`
+- Hurl trigger paths:
+  - `cmd/`
+  - `internal/`
+  - `pkg/`
+  - `tests/hurl/`
+- Hurl command:
+  - `make hurl`
+- server start:
+  - `make devrun`
+- healthcheck:
+  - `http://localhost:8080/health`
+- seed:
+  - `make seed`
+- db reset:
+  - `make dbreset`
+- restart_after_backend_change_when_hurl_skipped:
+  - `true`
+
+When `needs_hurl=true`, the runner should manage the configured development
+server itself instead of relying on the user to do it manually.
 
 Rules:
 
-- if schema or seed-sensitive persistence files changed:
-  - run `make dbreset`
-  - start `make devrun` in the background
-  - wait for `/health`
-  - run `make seed`
-  - run `make hurl`
+- if schema or seed-sensitive files changed and a db reset command is configured:
+  - run the configured db reset command
+  - start the configured server command in the background
+  - wait for the configured healthcheck URL or healthcheck command
+  - run the configured seed command when present
+  - run the configured Hurl command
 - otherwise:
-  - start `make devrun` in the background
-  - wait for `/health`
-  - run `make hurl`
+  - start the configured server command in the background
+  - wait for the configured healthcheck URL or healthcheck command
+  - run the configured Hurl command
 
 If Go backend files changed but Hurl was skipped, the runner should still
-restart the server once at the end to satisfy the target repository rule that
-backend changes require a restart.
+restart the server once at the end only when the repo-local config explicitly
+enables `restart_after_backend_change_when_hurl_skipped`.
 
 The runner must capture server logs into the iteration artifact directory.
+The runner must terminate any managed server process on normal completion,
+failure, interrupt, and `review-reset`.
+
+On loop startup, if `managed_server_pid` exists, the runner should verify that
+the process still matches the configured server command. If it does, terminate
+it before starting a new one. If it does not, clear the stale PID and continue.
 
 ## Iteration State Machine
 
@@ -323,19 +447,23 @@ Each iteration follows this sequence:
 5. if findings are zero:
    - run verification
    - if verification passes, mark `complete` and stop early
+   - if verification fails, mark `failed` with `last_stop_reason=verification_failed_after_zero_findings` and stop
 6. write `status=fix`
 7. run fixer Codex with the full finding list
 8. save fixer output
-9. write `status=verify`
-10. run verification commands
-11. if verification fails:
+9. if fixer reports `blocked`, mark `failed` with `last_stop_reason=fix_blocked` and stop
+10. write `status=verify`
+11. run verification commands
+12. if verification fails:
    - run the fixer one more time with:
      - original findings
      - verification failure output
    - rerun verification once
-12. if verification still fails, mark the loop failed and stop
-13. if verification passes, continue to the next iteration unless `--max` was
+13. if verification still fails, mark the loop failed and stop
+14. if verification passes, continue to the next iteration unless `--max` was
     reached
+15. if `--max` is reached with a successful last iteration, mark `stopped` with
+    `last_stop_reason=max_reached`
 
 ## Failure Policy
 
@@ -347,7 +475,10 @@ Immediate failure conditions:
 - reviewer output is not valid JSON
 - reviewer output violates schema
 - fixer process exits non-zero
+- fixer output is malformed
+- fixer reports `blocked`
 - verification fails twice in the same iteration
+- verification fails after a zero-finding review
 - server startup for Hurl never reaches healthy state
 
 Non-failure conditions:
@@ -363,6 +494,7 @@ Non-failure conditions:
 - repo path
 - current iteration
 - current status
+- last stop reason
 - last review summary
 - last verification summary
 - last artifact directory
@@ -370,7 +502,8 @@ Non-failure conditions:
 `review-reset` should:
 
 - reset `review-loop.json`
-- optionally clear `review-runs/`
+- optionally clear `review-runs/` when `--artifacts` is passed
+- terminate any still-running managed server process recorded in state
 - never revert or delete repository code changes
 
 This matches the user-selected branch strategy of keeping all work on the same
@@ -403,6 +536,17 @@ the existing runner where possible:
 - `--model`
 
 This keeps operator expectations consistent and minimizes new surface area.
+
+`review-loop --dry-run` should print, without executing:
+
+- the resolved review prompt path
+- the reviewer `codex exec` command
+- the fixer `codex exec` command
+- the resolved base verification commands
+- whether Hurl is configured for the current repo
+- the sticky `needs_hurl` decision rule
+- the server orchestration commands that would run if Hurl becomes required
+- the artifact directory that would be created for iteration 1
 
 ## Testing Strategy
 
